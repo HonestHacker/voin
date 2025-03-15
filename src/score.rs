@@ -7,8 +7,6 @@ use shakmaty::Color;
 pub enum Score {
     Centipawn(i16),
     Mate(i8),
-    // Min,
-    // Max,
 }
 
 impl Score {
@@ -42,7 +40,6 @@ impl Score {
             Self::Mate(val) => val.is_negative(),
         }
     }
-
 }
 
 impl std::fmt::Display for Score {
@@ -64,8 +61,6 @@ impl ops::Neg for Score {
         match self {
             Self::Centipawn(val) => Self::Centipawn(-val),
             Self::Mate(val) => Self::Mate(-val),
-            // Self::Min => Self::Max,
-            // Self::Max => Self::Min,
         }
     }
 }
@@ -90,21 +85,12 @@ impl Ord for Score {
                 }
             }
             (Self::Centipawn(this), Self::Centipawn(other)) => this.cmp(other),
-            // Mate(neg) > Centipawn(MIN)
             (Self::Mate(_), _) if other.is_min() => Ordering::Greater,
             (_, Self::Mate(_)) if self.is_min() => Ordering::Less,
-            // Mate(neg) < Centipawn(any)
             (Self::Mate(_), _) if self.is_negative() => Ordering::Less,
             (_, Self::Mate(_)) if other.is_negative() => Ordering::Greater,
-            // Mate(pos) > Centipawn(any)
             (Self::Mate(_), _) => Ordering::Greater,
             (_, Self::Mate(_)) => Ordering::Less,
-            // (Self::Min, Self::Min) => Ordering::Equal,
-            // (Self::Min, _) => Ordering::Less,
-            // (_, Self::Min) => Ordering::Greater,
-            // (Self::Max, Self::Max) => Ordering::Equal,
-            // (Self::Max, _) => Ordering::Greater,
-            // (_, Self::Max) => Ordering::Less,
         }
     }
 }
@@ -120,21 +106,7 @@ impl ops::Add for Score {
             (_, Self::Mate(_)) => rhs,
             (Self::Centipawn(this), Self::Centipawn(other)) => {
                 Self::Centipawn(this.saturating_add(*other))
-                // match this.checked_add(*other) {
-                //     Some(sum) => Self::Centipawn(sum),
-                //     None => {
-                //         if this.is_positive() {
-                //             Self::Max
-                //         } else {
-                //             Self::Min
-                //         }
-                //     }
-                // }
-            } // (Self::Max, _) => Self::Max,
-              // (_, Self::Max) => Self::Max,
-              // (Self::Min, Self::Min) => Self::Min,
-              // (Self::Min, Self::Centipawn(_)) => rhs,
-              // (Self::Centipawn(_), Self::Min) => self,
+            }
         }
     }
 }
@@ -221,13 +193,6 @@ mod tests {
         assert_cmp!(Mate(-5) ;< Centipawn(10), Centipawn(-10));
     }
 
-    // #[test]
-    // fn test_max_ord() {
-    //     assert_cmp!(Max ;< Mate(1));
-    //     assert_cmp!(Max ;> Centipawn(1), Min);
-    //     assert_cmp!(Max ;== Max);
-    // }
-
     #[test]
     fn test_centipawn_ord() {
         assert_cmp!(Centipawn(10) ;> Centipawn(9),Centipawn(-1));
@@ -250,8 +215,5 @@ mod tests {
         assert_op_eq!(Centipawn(1) ;+ Centipawn(2), Centipawn(3));
         assert_op_eq!(Centipawn(1) ;- Centipawn(2), Centipawn(-1));
         assert_op_eq!(Centipawn(1) ;+ Mate(3), Mate(3));
-        // assert_eq!(Centipawn(1) + Max, Max);
-        // assert_eq!(Max + Centipawn(1), Max);
-        // assert_eq!(Max + Max, Max);
     }
 }
