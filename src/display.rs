@@ -7,6 +7,7 @@ pub fn display_board(board: &Board) -> String {
     let mut sboard = String::new();
     sboard.push_str(" ==========\n");
     for (rowi, row) in split.enumerate() {
+        let rowi = 8-rowi;
         sboard.push_str(&format!("{rowi}|"));
         for c in row.chars() {
             if c.is_numeric() {
@@ -18,7 +19,7 @@ pub fn display_board(board: &Board) -> String {
         sboard.push_str("|\n");
     }
     sboard.push_str(" ==========\n");
-    sboard.push_str("  ABCDFGHI ");
+    sboard.push_str("  abcdefgh ");
 
     sboard
 }
