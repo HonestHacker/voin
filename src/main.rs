@@ -1,6 +1,7 @@
 mod search;
 mod evaluation;
 mod utils;
+mod score;
 
 use std::{io};
 use shakmaty::{Chess, fen::Fen, CastlingMode, Position, uci::UciMove};
@@ -50,7 +51,7 @@ fn main() -> io::Result<()> {
                 "go" => {
                     let (best_move, best_score) = find_best_move(&pos);
                     let best_move_uci = best_move.to_uci(CastlingMode::Standard);
-                    println!("info score value cp {} pv {}", best_score, best_move_uci);
+                    println!("info {} pv {}", best_score, best_move_uci);
                     println!("bestmove {}", best_move_uci);
                 }
                 "quit" => enabled = false,

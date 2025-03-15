@@ -1,5 +1,5 @@
 use shakmaty::{Chess, Position, Role, Piece, Color, Outcome, Square, File, Board};
-use crate::utils::*;
+use crate::{score::Score, utils::*};
 
 // Pawn tables
 const PAWN_MG: [i16; 64] = [
@@ -140,20 +140,20 @@ const KING_EG: [i16; 64] = [
 ];
 
 // Piece values for material evaluation
-pub fn get_piece_value(role: Role) -> i16 {
-    match role {
+pub fn get_piece_value(role: Role) -> Score {
+    Score::Centipawn(match role {
         Role::Pawn => 100,
         Role::Knight => 325,
         Role::Bishop => 350,
         Role::Rook => 500,
         Role::Queen => 1000,
         Role::King => 10000,
-    }
+    })
 }
 
 
 // Helper function to get positional bonus with phase interpolation
-fn get_positional_bonus(piece: Piece, square: Square, phase: f32) -> i16 {
+fn get_positional_bonus(piece: Piece, square: Square, phase: f32) -> Score {
     let (mg_table, eg_table) = match piece.role {
         Role::Pawn => (&PAWN_MG, &PAWN_EG),
         Role::Knight => (&KNIGHT_MG, &KNIGHT_EG),
@@ -173,18 +173,18 @@ fn get_positional_bonus(piece: Piece, square: Square, phase: f32) -> i16 {
     let mg: i16 = mg_table[index];
     let eg: i16 = eg_table[index];
     
-    (mg as f32 * phase + eg as f32 * (1.0 - phase)) as i16
+    Score::Centipawn((mg as f32 * phase + eg as f32 * (1.0 - phase)) as i16)
 }
 
-pub fn calculate_score(pos: &Chess) -> i16 {
+pub fn calculate_score(pos: &Chess) -> Score {
     if pos.is_game_over() {
         return match pos.outcome().unwrap() {
-            Outcome::Decisive { winner } => i16::MAX / 2 * get_color_factor(winner),
-            Outcome::Draw => 0,
+            Outcome::Decisive { winner } => (Score::MAX / 2).apply_color_factor(winner),
+            Outcome::Draw => Score::ZERO,
         };
     }
 
-    let mut score = 0;
+    let mut score = Score::ZERO;
     let board = pos.board();
     let game_phase = calculate_game_phase(board);
 
@@ -193,8 +193,7 @@ pub fn calculate_score(pos: &Chess) -> i16 {
         let piece = board.piece_at(square).unwrap();
         let value = get_piece_value(piece.role);
         let positional = get_positional_bonus(piece, square, game_phase);
-        let sign = if piece.color == Color::White { 1 } else { -1 };
-        score += sign * (value + positional);
+        score += (value + positional).apply_color_factor(piece.color);
     }
 
     // Pawn structure evaluation
@@ -219,7 +218,7 @@ fn calculate_game_phase(board: &Board) -> f32 {
     clamp(0.0, phase / 24.0, 1.0)
 }
 
-fn evaluate_pawn_structure(board: &shakmaty::Board) -> i16 {
+fn evaluate_pawn_structure(board: &shakmaty::Board) -> Score {
     let mut score = 0;
     for color in &[Color::White, Color::Black] {
         let pawns = board.by_piece(Piece { color: *color, role: Role::Pawn });
@@ -241,10 +240,10 @@ fn evaluate_pawn_structure(board: &shakmaty::Board) -> i16 {
             }
         }
     }
-    score
+    Score::Centipawn(score)
 }
 
-fn evaluate_mobility(pos: &Chess) -> i16 {
+fn evaluate_mobility(pos: &Chess) -> Score {
     let mut mobility = 0;
     let color = pos.turn();
     let board = pos.board();
@@ -262,10 +261,10 @@ fn evaluate_mobility(pos: &Chess) -> i16 {
         }
     }
     
-    mobility * get_color_factor(color)
+    Score::Centipawn(mobility).apply_color_factor(color)
 }
 
-fn evaluate_bishop_pair(board: &shakmaty::Board) -> i16 {
+fn evaluate_bishop_pair(board: &shakmaty::Board) -> Score {
     let mut score = 0;
     for color in &[Color::White, Color::Black] {
         let bishops = board.by_piece(Piece { color: *color, role: Role::Bishop });
@@ -273,10 +272,10 @@ fn evaluate_bishop_pair(board: &shakmaty::Board) -> i16 {
             score += if *color == Color::White { 30 } else { -30 };
         }
     }
-    score
+    Score::Centipawn(score)
 }
 
-fn evaluate_king_safety(board: &shakmaty::Board, phase: f32) -> i16 {
+fn evaluate_king_safety(board: &shakmaty::Board, phase: f32) -> Score {
     let mut score = 0;
     for color in &[Color::White, Color::Black] {
         if let Some(sq) = board.king_of(*color) {
@@ -287,5 +286,5 @@ fn evaluate_king_safety(board: &shakmaty::Board, phase: f32) -> i16 {
             score += if *color == Color::White { -penalty } else { penalty };
         }
     }
-    score
+    Score::Centipawn(score)
 }
