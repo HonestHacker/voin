@@ -1,6 +1,7 @@
 mod search;
 mod evaluation;
 mod utils;
+mod display;
 
 use std::{io};
 use shakmaty::{Chess, fen::Fen, CastlingMode, Position, uci::UciMove};
@@ -54,7 +55,12 @@ fn main() -> io::Result<()> {
                     println!("bestmove {}", best_move_uci);
                 }
                 "quit" => enabled = false,
-                &_ => {},
+                "board" => {
+                    let board = pos.board();
+                    let s = display::display_board(board);
+                    println!("{s}");
+                },
+                _ => println!("Unknown command"),
             }
         }
     }
