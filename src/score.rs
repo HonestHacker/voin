@@ -3,6 +3,8 @@ use std::ops;
 
 use shakmaty::Color;
 
+use crate::utils::signum;
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Score {
     Centipawn(i16),
@@ -48,7 +50,7 @@ impl std::fmt::Display for Score {
             _ if self.is_max() => write!(f, "score upperbound"),
             _ if self.is_min() => write!(f, "score lowerbound"),
             Self::Centipawn(val) => write!(f, "score cp {}", val),
-            Self::Mate(val) => write!(f, "score mate {}", val),
+            Self::Mate(val) => write!(f, "score mate {}", (val - signum(*val as isize)) / 2),
         }
     }
 }
@@ -111,11 +113,30 @@ impl ops::Add for Score {
     }
 }
 
+impl ops::Add<isize> for Score {
+    type Output = Self;
+    fn add(self, rhs: isize) -> Self::Output {
+        match self {
+            Self::Centipawn(this) => Self::Centipawn(this + rhs as i16),
+            Score::Mate(this) => Self::Mate(this + rhs as i8)
+        }
+    }
+}
+
 impl ops::Sub for Score {
     type Output = Self;
 
     #[inline]
     fn sub(self, rhs: Self) -> Self::Output {
+        self + -rhs
+    }
+}
+
+impl ops::Sub<isize> for Score {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, rhs: isize) -> Self::Output {
         self + -rhs
     }
 }

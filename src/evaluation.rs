@@ -179,7 +179,7 @@ fn get_positional_bonus(piece: Piece, square: Square, phase: f32) -> Score {
 pub fn calculate_score(pos: &Chess) -> Score {
     if pos.is_game_over() {
         return match pos.outcome().unwrap() {
-            Outcome::Decisive { winner } => (Score::MAX / 2).apply_color_factor(winner),
+            Outcome::Decisive { winner } => Score::Mate(1).apply_color_factor(winner),
             Outcome::Draw => Score::ZERO,
         };
     }

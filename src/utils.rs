@@ -8,6 +8,16 @@ pub fn get_color_factor(color: Color) -> i16 {
     }
 }
 
+pub fn signum(number: isize) -> i8 {
+    if number == 0 {
+        return 0;
+    } else if number > 0 {
+        return 1;
+    }
+
+    -1
+}
+
 pub fn clamp<T: PartialOrd>(low: T, value: T, high: T) -> T {
     debug_assert!(low < high, "low is bigger than high!");
     if value < low {

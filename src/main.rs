@@ -2,9 +2,10 @@ mod search;
 mod evaluation;
 mod utils;
 mod score;
+mod transposition;
 
 use std::{io};
-use shakmaty::{Chess, fen::Fen, CastlingMode, Position, uci::UciMove};
+use shakmaty::{Chess, fen::Fen, CastlingMode, Position, uci::UciMove, Color};
 use search::*;
 
 fn print_engine_info() {
@@ -25,6 +26,9 @@ fn main() -> io::Result<()> {
             match cmd.as_str() {
                 "uci" => print_engine_info(),
                 "isready" => println!("readyok"),
+                "ucinewgame" => {
+                    pos = Chess::default();
+                }
                 "position" => {
                     let board_type = tokens[1];
                     if board_type == "startpos" {
@@ -49,12 +53,19 @@ fn main() -> io::Result<()> {
                     }
                 }
                 "go" => {
-                    let (best_move, best_score) = find_best_move(&pos);
+                    let wtime: i32 = tokens[tokens.iter().position(|&r| r == "wtime").unwrap() + 1].parse().unwrap();
+                    let btime: i32 = tokens[tokens.iter().position(|&r| r == "btime").unwrap() + 1].parse().unwrap();
+                    let remaining_time = match pos.turn() {
+                        Color::White => wtime,
+                        Color::Black => btime,
+                    };
+                    let (best_move, _best_score) = find_best_move(&pos, remaining_time);
                     let best_move_uci = best_move.to_uci(CastlingMode::Standard);
-                    println!("info {} pv {}", best_score, best_move_uci);
                     println!("bestmove {}", best_move_uci);
                 }
-                "quit" => enabled = false,
+                "quit" => {
+                    enabled = false;
+                }
                 &_ => {},
             }
         }
