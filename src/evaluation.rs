@@ -202,20 +202,29 @@ pub fn calculate_score(pos: &Chess) -> Score {
     // Mobility evaluation
     score += evaluate_mobility(pos);
 
-    // Bishop pair bonus
-    score += evaluate_bishop_pair(board);
-
     // King safety
     score += evaluate_king_safety(board, game_phase);
+
+    // Space
+    score += evaluate_space_control(board, game_phase);
+
+    // Center control
+    score += evaluate_center_control(board, game_phase);
+
+    // Tempo
+    score += Score::Centipawn(13).apply_color_factor(pos.turn());
 
     score
 }
 
 // Helper functions implementation
 fn calculate_game_phase(board: &Board) -> f32 {
-    let mut phase = 24.0;
-    phase -= (board.knights().count() + board.bishops().count() + board.rooks().count() * 2 + board.queens().count() * 4) as f32;
-    clamp(0.0, phase / 24.0, 1.0)
+    let current_phase = 
+        board.knights().count() as f32 * 1.0 +
+        board.bishops().count() as f32 * 1.0 +
+        board.rooks().count() as f32 * 2.0 +
+        board.queens().count() as f32 * 4.0;
+    (current_phase / 24.0).clamp(0.0, 1.0)
 }
 
 fn evaluate_pawn_structure(board: &shakmaty::Board) -> Score {
@@ -244,35 +253,42 @@ fn evaluate_pawn_structure(board: &shakmaty::Board) -> Score {
 }
 
 fn evaluate_mobility(pos: &Chess) -> Score {
-    let mut mobility = 0;
-    let color = pos.turn();
+    let mut white_mobility = 0;
+    let mut black_mobility = 0;
     let board = pos.board();
     
-    for sq in board.by_color(color) {
+    // Evaluate white's mobility
+    for sq in board.by_color(Color::White) {
         if let Some(piece) = board.piece_at(sq) {
             let attacks = board.attacks_from(sq);
-            mobility += (attacks.count() as i16) * match piece.role {
+            let mob = (attacks.count() as i16) * match piece.role {
                 Role::Knight => 2,
                 Role::Bishop => 3,
                 Role::Rook => 2,
                 Role::Queen => 1,
                 _ => 0,
             };
+            white_mobility += mob;
         }
     }
     
-    Score::Centipawn(mobility).apply_color_factor(color)
-}
-
-fn evaluate_bishop_pair(board: &shakmaty::Board) -> Score {
-    let mut score = 0;
-    for color in &[Color::White, Color::Black] {
-        let bishops = board.by_piece(Piece { color: *color, role: Role::Bishop });
-        if bishops.count() >= 2 {
-            score += if *color == Color::White { 30 } else { -30 };
+    // Evaluate black's mobility
+    for sq in board.by_color(Color::Black) {
+        if let Some(piece) = board.piece_at(sq) {
+            let attacks = board.attacks_from(sq);
+            let mob = (attacks.count() as i16) * match piece.role {
+                Role::Knight => 2,
+                Role::Bishop => 3,
+                Role::Rook => 2,
+                Role::Queen => 1,
+                _ => 0,
+            };
+            black_mobility += mob;
         }
     }
-    Score::Centipawn(score)
+    
+    // Net mobility is white's minus black's
+    Score::Centipawn(white_mobility - black_mobility)
 }
 
 fn evaluate_king_safety(board: &shakmaty::Board, phase: f32) -> Score {
@@ -287,4 +303,124 @@ fn evaluate_king_safety(board: &shakmaty::Board, phase: f32) -> Score {
         }
     }
     Score::Centipawn(score)
+}
+
+fn evaluate_space_control(board: &Board, phase: f32) -> Score {
+    let mut white_space = 0;
+    let mut black_space = 0;
+
+    for square in board.occupied() {
+        let piece = match board.piece_at(square) {
+            Some(p) => p,
+            None => continue,
+        };
+
+        let color = piece.color;
+        let role = piece.role;
+
+        // Kings don't contribute to space control
+        if role == Role::King {
+            continue;
+        }
+
+        // Determine opponent's half based on color
+        let opponent_half = match color {
+            Color::White => 4..=7, // Ranks 5-8 (0-indexed 4-7)
+            Color::Black => 0..=3, // Ranks 1-4 (0-indexed 0-3)
+        };
+
+        // Get all squares attacked by this piece
+        let attacks = board.attacks_from(square);
+
+        for attacked_sq in attacks {
+            let rank = attacked_sq.rank() as u8;
+
+            if opponent_half.contains(&rank) {
+                // Assign points based on piece type
+                let points = match role {
+                    Role::Pawn => 10,
+                    Role::Knight => 20,
+                    Role::Bishop => 20,
+                    Role::Rook => 10,
+                    Role::Queen => 10,
+                    _ => 0,
+                };
+
+                match color {
+                    Color::White => white_space += points,
+                    Color::Black => black_space += points,
+                }
+            }
+        }
+    }
+
+    // Apply phase scaling (space is more important in middlegame)
+    let space_score = ((white_space as f32 - black_space as f32) * phase) as i16;
+    Score::Centipawn(space_score)
+}
+
+fn evaluate_center_control(board: &Board, phase: f32) -> Score {
+    // Define central squares (d4, e4, d5, e5)
+    const CENTER_SQUARES: [Square; 4] = [
+        Square::D4,
+        Square::E4,
+        Square::D5,
+        Square::E5,
+    ];
+
+    let mut white_control = 0;
+    let mut black_control = 0;
+
+    for square in board.occupied() {
+        let piece = match board.piece_at(square) {
+            Some(p) => p,
+            None => continue,
+        };
+
+        // Skip kings (their control isn't meaningful for center)
+        if piece.role == Role::King {
+            continue;
+        }
+
+        // Bonus for occupying central squares
+        if CENTER_SQUARES.contains(&square) {
+            let bonus = match piece.role {
+                Role::Pawn => 40,  // High value for pawns in center
+                Role::Knight => 30,
+                Role::Bishop => 25,
+                Role::Rook => 20,
+                Role::Queen => 15,
+                _ => 0,
+            };
+
+            match piece.color {
+                Color::White => white_control += bonus,
+                Color::Black => black_control += bonus,
+            }
+        }
+
+        // Bonus for attacking central squares
+        let attacks = board.attacks_from(square);
+        for attacked_sq in attacks {
+            if CENTER_SQUARES.contains(&attacked_sq) {
+                let attack_value = match piece.role {
+                    Role::Pawn => 15,  // Pawns exert important central pressure
+                    Role::Knight => 20,
+                    Role::Bishop => 20,
+                    Role::Rook => 15,
+                    Role::Queen => 10, // Queens get lower weight to avoid overcounting
+                    _ => 0,
+                };
+
+                match piece.color {
+                    Color::White => white_control += attack_value,
+                    Color::Black => black_control += attack_value,
+                }
+            }
+        }
+    }
+
+    // Apply phase scaling (center control matters more in opening/middlegame)
+    let net_control = ((white_control - black_control) as f32 * phase) as i16;
+    Score::Centipawn(net_control)
 }

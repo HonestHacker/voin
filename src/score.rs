@@ -42,6 +42,12 @@ impl Score {
             Self::Mate(val) => val.is_negative(),
         }
     }
+    pub fn increment_mate_depth(&self) -> Self {
+        match self {
+            Self::Mate(val) => Self::Mate(val + signum(*val as isize)),
+            _ => *self
+        }
+    }
 }
 
 impl std::fmt::Display for Score {
@@ -50,7 +56,7 @@ impl std::fmt::Display for Score {
             _ if self.is_max() => write!(f, "score upperbound"),
             _ if self.is_min() => write!(f, "score lowerbound"),
             Self::Centipawn(val) => write!(f, "score cp {}", val),
-            Self::Mate(val) => write!(f, "score mate {}", (val - signum(*val as isize)) / 2),
+            Self::Mate(val) => write!(f, "score mate {}", (val - signum(*val as isize)) / 2 + (val - signum(*val as isize)) % 2)
         }
     }
 }

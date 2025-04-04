@@ -53,12 +53,19 @@ fn main() -> io::Result<()> {
                     }
                 }
                 "go" => {
-                    let wtime: i32 = tokens[tokens.iter().position(|&r| r == "wtime").unwrap() + 1].parse().unwrap();
-                    let btime: i32 = tokens[tokens.iter().position(|&r| r == "btime").unwrap() + 1].parse().unwrap();
-                    let remaining_time = match pos.turn() {
-                        Color::White => wtime,
-                        Color::Black => btime,
-                    };
+                    let remaining_time: i32;
+                    if tokens.contains(&"movetime") {
+                        remaining_time = tokens[tokens.iter().position(|&r| r == "movetime").unwrap() + 1].parse().unwrap();
+                    } else if tokens.contains(&"wtime") && tokens.contains(&"btime") {
+                        let wtime: i32 = tokens[tokens.iter().position(|&r| r == "wtime").unwrap() + 1].parse().unwrap();
+                        let btime: i32 = tokens[tokens.iter().position(|&r| r == "btime").unwrap() + 1].parse().unwrap();
+                        remaining_time = match pos.turn() {
+                            Color::White => wtime,
+                            Color::Black => btime,
+                        };
+                    } else {
+                        remaining_time = 10_000;
+                    }
                     let (best_move, _best_score) = find_best_move(&pos, remaining_time);
                     let best_move_uci = best_move.to_uci(CastlingMode::Standard);
                     println!("bestmove {}", best_move_uci);

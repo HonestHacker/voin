@@ -7,8 +7,8 @@ use crate::score::Score;
 use crate::transposition::{TranspositionTable, NodeType};
 //use crate::utils::signum;
 
+
 fn quiescence_search(pos: &Chess, mut alpha: Score, beta: Score) -> Score {
-    // Check for terminal node first
     if pos.is_game_over() {
         return match pos.outcome().unwrap() {
             Outcome::Decisive { winner } => Score::Mate(1).apply_color_factor(winner),
@@ -16,27 +16,51 @@ fn quiescence_search(pos: &Chess, mut alpha: Score, beta: Score) -> Score {
         };
     }
 
-    // Stand pat score (current position evaluation)
-    let stand_pat = calculate_score(pos).apply_color_factor(pos.turn());
-    if stand_pat >= beta {
-        return beta;
+    let is_in_check = pos.is_check();
+    let stand_pat = if is_in_check {
+        Score::MIN
+    } else {
+        calculate_score(pos).apply_color_factor(pos.turn())
+    };
+
+    if !is_in_check {
+        if stand_pat >= beta {
+            return beta;
+        }
+        alpha = alpha.max(stand_pat);
     }
-    alpha = alpha.max(stand_pat);
 
-    // Generate and order capture moves using MVV-LVA heuristic
-    let mut captures = pos.legal_moves()
-        .into_iter()
-        .filter(|m| m.is_capture())
-        .collect::<Vec<_>>();
+    let mut moves = pos.legal_moves();
+    if !is_in_check {
+        moves.retain(|m| m.is_capture());
+        // Delta pruning: skip captures that can't improve alpha
+        let delta_margin = Score::Centipawn(100);
+        moves.retain(|m| {
+            if let Some(captured) = m.capture() {
+                stand_pat + get_piece_value(captured) + delta_margin > alpha
+            } else {
+                true
+            }
+        });
+    }
 
-    // MVV-LVA ordering: Most Valuable Victim - Least Valuable Aggressor
-    captures.sort_by(|a, b| {
-        let a_value = get_piece_value(a.capture().unwrap()) * 10 - get_piece_value(a.role());
-        let b_value = get_piece_value(b.capture().unwrap()) * 10 - get_piece_value(b.role());
-        b_value.cmp(&a_value)
+    // MVV-LVA ordering for captures, others by piece value in check
+    moves.sort_by(|a, b| {
+        let a_cap = a.capture();
+        let b_cap = b.capture();
+        match (a_cap, b_cap) {
+            (Some(a_piece), Some(b_piece)) => {
+                let a_val = get_piece_value(a_piece) * 10 - get_piece_value(a.role());
+                let b_val = get_piece_value(b_piece) * 10 - get_piece_value(b.role());
+                b_val.cmp(&a_val)
+            }
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => b.role().cmp(&a.role()), // Higher value pieces first in checks
+        }
     });
 
-    for mov in captures {
+    for mov in moves {
         let mut new_pos = pos.clone();
         new_pos.play_unchecked(&mov);
         let score = -quiescence_search(&new_pos, -beta, -alpha);
@@ -55,6 +79,7 @@ fn quiescence_search(pos: &Chess, mut alpha: Score, beta: Score) -> Score {
 fn negamax(
     pos: &Chess,
     depth: i16,
+    ply: i16,
     mut alpha: Score,
     beta: Score,
     transposition_table: &mut TranspositionTable,
@@ -78,7 +103,7 @@ fn negamax(
         return (eval, None);
     }
 
-    if depth == 0 {
+    if depth <= 0 {
         return (quiescence_search(pos, alpha, beta), None);
     }
 
@@ -106,26 +131,36 @@ fn negamax(
     }
 
     let mut first_move = true;
-    for mov in moves {
+    for (i, mov) in moves.iter().enumerate() {
         let mut new_pos = pos.clone();
         new_pos.play_unchecked(&mov);
-        let score;
 
+        let is_capture = mov.is_capture();
+        let is_promotion = mov.promotion().is_some();
+        let gives_check = new_pos.is_check(); // After playing the move
+        let depth_reduction: i16 = if i > 0 && !is_capture && !is_promotion && !gives_check {
+            1 + (i / 6).min(2) as i16 // Adjust based on move index
+        } else {
+            0
+        };
+
+        let score;
+        
         if first_move {
-            let (s, _) = negamax(&new_pos, depth - 1, -beta, -alpha, transposition_table);
+            let s = negamax(&new_pos, depth - 1 - depth_reduction, ply + 1, -beta, -alpha, transposition_table).0.increment_mate_depth();
             score = -s;
             first_move = false;
         } else {
-            let (s_null, _) = negamax(&new_pos, depth - 1, -alpha - 1, -alpha, transposition_table);
+            let s_null = negamax(&new_pos, depth - 1 - depth_reduction, ply + 1, -alpha - 1, -alpha, transposition_table).0.increment_mate_depth();
             let null_score = -s_null;
             if null_score > alpha {
-                let (s_research, _) = negamax(&new_pos, depth - 1, -beta, -alpha, transposition_table);
+                let s_research = negamax(&new_pos, depth - 1, ply + 1, -beta, -alpha, transposition_table).0.increment_mate_depth();
                 score = -s_research;
             } else {
                 score = null_score;
             }
         }
-
+        
         if score > best_value {
             best_value = score;
             best_move = Some(mov.clone());
@@ -195,12 +230,13 @@ pub fn find_best_move(pos: &Chess, remaining_time: i32) -> (Move, Score) {
             beta = Score::MAX / 2;
         }
 
-        let (mut score, mut mv) = negamax(pos, current_depth, alpha, beta, &mut transposition_table);
+        let (mut score, mut mv) = negamax(pos, current_depth, 0, alpha, beta, &mut transposition_table);
 
         if score <= alpha {
-            (score, mv) = negamax(pos, current_depth, -Score::MAX / 2, beta, &mut transposition_table);
+            (score, mv) = negamax(pos, current_depth, 0, -Score::MAX / 2, beta, &mut transposition_table);
         } else if score >= beta {
-            (score, mv) = negamax(pos, current_depth, alpha, Score::MAX / 2, &mut transposition_table);
+            (score, mv) = negamax(pos, current_depth, 0, alpha, Score::MAX / 2, &mut transposition_table);
+            
         }
 
         if let Some(m) = mv {
@@ -215,7 +251,7 @@ pub fn find_best_move(pos: &Chess, remaining_time: i32) -> (Move, Score) {
         let pv_str = pv_uci.join(" ");
 
         println!(
-            "info depth {} score {} time {} pv {}",
+            "info depth {} {} time {} pv {}",
             current_depth,
             best_score,
             start_time.elapsed().as_millis(),
